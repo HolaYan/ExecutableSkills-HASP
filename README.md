@@ -1,7 +1,9 @@
 # HASP — Harnessing LLM Agents with Skill Programs
 
 > **Paper:** *Harnessing LLM Agents with Skill Programs*
+> 
 > **Authors:** Hongjun Liu, Yifei Ming, Shafiq Joty, Chen Zhao
+> 
 > **Year:** 2026
 
 HASP turns reusable agent experience into **executable Program Functions (PFs)**: small state-to-intervention programs that watch an agent rollout, detect recurring failure patterns, and repair the next decision only when needed.
