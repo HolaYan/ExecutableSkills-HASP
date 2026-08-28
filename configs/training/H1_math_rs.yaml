@@ -1,0 +1,51 @@
+# E2 MATH — rejection sampling / iterative SFT
+experiment:
+  id: "H1_math_rs_evidence_pfs"
+  output_dir: "./training/outputs/"
+  seed: 42
+
+method: "rs"
+objective: "A"
+domain: "math"
+n_iterations: 2
+
+model:
+  path: "Qwen/Qwen2.5-7B-Instruct"
+
+data:
+  prompts_path: "./training/outputs/_shared_data_math/objA_prompts.jsonl"
+
+rollout:
+  skill_library_dir: "./skills/math"   # resolved to skills/{textual,executable}/math (see skills_layout.py)
+  raw_data_dir: "data/math"
+  group_size: 4
+  max_steps: 1                         # math = single-step
+  max_search_calls: 0
+  max_read_calls: 0
+  parallel_episodes: 24
+  pf_top_k: 6
+  pf_selection_model: ""  # set to your hosted model; empty means no hosted model is configured
+  tensor_parallel_size: 2
+  gpu_memory_utilization: 0.90
+  max_model_len: 16384
+  mode: "clean"
+
+filter:
+  top_k: 2
+  require_exact_match: true
+
+trainer:
+  num_train_epochs: 8.0
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  learning_rate: 5.0e-6
+  warmup_ratio: 0.03
+  max_seq_length: 4096
+  bf16: true
+  gradient_checkpointing: true
+  save_every_n_epochs: 2
+  save_total_limit: 5
+  use_lora: true
+  lora_r: 16
+  lora_alpha: 32
+  report_to: "wandb"

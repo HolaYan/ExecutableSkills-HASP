@@ -1,0 +1,118 @@
+# Self-Improving Skills Agent — MATH domain (AIME24 / AMC23 / GameOf24).
+# Usage: python self_improving/run_self_improving.py --config self_improving/configs/self_improving_math.yaml
+
+experiment:
+  name: "self_improving_math_v1"
+  output_dir: "./outputs/self_improving_math/"
+  num_epochs: 3
+
+# Base model for ReAct execution (matches math_eval student)
+models:
+  base:
+    path: "Qwen/Qwen2.5-7B-Instruct"
+    backend: null
+
+# Roles — student solves, PF helper verifies
+roles:
+  student: "Qwen/Qwen2.5-7B-Instruct"
+  teacher: "gpt"
+
+# Domain signal → flows through to RunnerConfig.domain and metrics
+domain: "math"
+
+# Validation — AMC23 + GameOf24 (AIME24 has only 30 items, all reserved as test)
+validation:
+  source_dir: "${HASP_MATH_DATA}"
+  inference_results_dir: "outputs/math_eval/math_eval_qwen2_5_7b"   # may be empty initially
+  default_test_samples: 100
+  test_samples_overrides:
+    AMC23: 20
+    GameOf24: 100
+  datasets:
+    - "AMC23"             # ~40 total: test=20, seed=10, val=10
+    - "GameOf24"          # ~1362 total: test=100, seed=50, val=50
+  seed_samples_per_dataset: 50      # GameOf24 uses this; AMC23 capped by pool size
+  val_samples_per_dataset: 50       # same
+  # Write splits to self_improving/data_math/{seed,validation}/ instead of data/
+  data_subdir: "data_math"
+
+# Skill library — math-specific
+skills:
+  seed_skill_dir: "self_improving/skills_math/seed/"
+  generated_skill_dir: "self_improving/skills_math/generated/"
+  skill_snapshots_dir: "self_improving/skills_math/snapshots/"
+  pf_selection:
+    enabled: true
+    model: "gpt"
+    top_k: 6             # 11 math PFs total; top-6 per problem
+  difficulty_gating:
+    enabled: false       # math problems uniformly hard
+    threshold: 3
+
+proposal:
+  max_candidates_per_epoch: 5
+  min_cluster_size: 3
+  student_model: "gpt"
+  temperature: 0.7
+  analyzer_mode: "both"
+  llm_analyzer_concurrency: 8
+  llm_dedup_threshold: 0.5
+
+review:
+  teacher_model: "gpt"
+  acceptance_threshold: 0.6
+  weight_concept: 0.25
+  weight_trigger: 0.20
+  weight_intervene: 0.20
+  weight_exec: 0.20
+  weight_validation: 0.15
+  temperature: 0.3
+
+library:
+  max_library_size: 30      # math domain tighter than web
+  new_group_threshold: 0.75
+  same_group_threshold: 0.60
+  allow_new_categories: true
+
+pseudo_gradient:
+  alpha_local: 0.4
+  beta_downstream: 0.4
+  gamma_cost: 0.1
+  delta_side_effect: 0.1
+  lambda_validation_gain: 0.5
+
+# Budget — math = single-step FINAL, no search/read
+budget:
+  max_steps: 1
+  max_search_calls: 0
+  max_read_calls: 0
+  timeout_seconds: 300
+
+vllm:
+  enabled: true
+  gpu_memory_utilization: 0.95
+  max_model_len: 16384
+  parallel_episodes: 32
+  quantization: "fp8"
+  max_num_seqs: 256
+
+training:
+  save_data: true
+  formats: ["sft", "dpo"]
+
+api_models:
+  gpt:
+    provider: "openai"
+    model_name: ""  # set to your hosted model; empty means no hosted model is configured
+    max_concurrent: 16
+  gpt4o_mini:
+    provider: "openai"
+    model_name: ""  # set to your hosted model; empty means no hosted model is configured
+    max_concurrent: 16
+
+# API keys — leave null so we always use the sbatch-exported env vars
+# (OPENAI_API_KEY, ANTHROPIC_API_KEY). Hardcoding here overrides the env.
+api_keys:
+  serpapi_key: null
+  openai_key: null
+  anthropic_key: null

@@ -1,0 +1,121 @@
+# Self-Improving Skills Agent — CODE domain (HumanEval+, MBPP+, BigCodeBench).
+# Usage: python self_improving/run_self_improving.py --config self_improving/configs/self_improving_code.yaml
+
+experiment:
+  name: "self_improving_code_v1"
+  output_dir: "./outputs/self_improving_code/"
+  num_epochs: 3
+
+models:
+  base:
+    path: "Qwen/Qwen2.5-7B-Instruct"
+    backend: null
+
+roles:
+  student: "Qwen/Qwen2.5-7B-Instruct"
+  teacher: "gpt"
+
+domain: "code"
+
+# Validation — testset is the 100-entry jsonl per benchmark. Self-improving
+# seed/val are carved from `*_train.jsonl` (the leftover problems not in
+# testset) and live under self_improving/data_code/{seed,validation}/.
+validation:
+  source_dir: "${HASP_CODE_DATA}"
+  inference_results_dir: "outputs/code_eval/code_eval_qwen2_5_7b"   # may be empty initially
+  default_test_samples: 100
+  test_samples_overrides:
+    humaneval_plus: 100
+    mbpp_plus: 100
+    bigcodebench: 100
+  datasets:
+    - "humaneval_plus"   # 100 testset (50 problems × {base, plus})
+    - "mbpp_plus"        # 100 testset (50 problems × {base, plus})
+    - "bigcodebench"     # 100 testset (50 hard + 50 full)
+  seed_samples_per_dataset: 10
+  val_samples_per_dataset: 10
+  data_subdir: "data_code"
+
+# Skill library — code-specific
+skills:
+  seed_skill_dir: "self_improving/skills_code/seed/"
+  generated_skill_dir: "self_improving/skills_code/generated/"
+  skill_snapshots_dir: "self_improving/skills_code/snapshots/"
+  pf_selection:
+    # PFSelector heuristic uses a hard-coded web-search PF_CATALOG that
+    # doesn't list our `code_*` skill_ids. Disabling makes the runner fall
+    # back to "all 12 code skills active per step" — appropriate when the
+    # whole library is already domain-specific & small.
+    enabled: false
+    model: "gpt"
+    top_k: 6
+  difficulty_gating:
+    enabled: false     # LCB problems already split by difficulty
+    threshold: 3
+
+proposal:
+  max_candidates_per_epoch: 5
+  min_cluster_size: 3
+  student_model: "gpt"
+  temperature: 0.7
+  analyzer_mode: "both"
+  llm_analyzer_concurrency: 8
+  llm_dedup_threshold: 0.5
+
+review:
+  teacher_model: "gpt"
+  acceptance_threshold: 0.6
+  weight_concept: 0.25
+  weight_trigger: 0.20
+  weight_intervene: 0.20
+  weight_exec: 0.20
+  weight_validation: 0.15
+  temperature: 0.3
+
+library:
+  max_library_size: 30
+  new_group_threshold: 0.75
+  same_group_threshold: 0.60
+  allow_new_categories: true
+
+pseudo_gradient:
+  alpha_local: 0.4
+  beta_downstream: 0.4
+  gamma_cost: 0.1
+  delta_side_effect: 0.1
+  lambda_validation_gain: 0.5
+
+# Budget — code = single-step FINAL with full code in <think>...</think>
+budget:
+  max_steps: 2
+  max_search_calls: 0
+  max_read_calls: 0
+  timeout_seconds: 600        # generous; sandbox per-test timeout is separate
+
+vllm:
+  enabled: true
+  gpu_memory_utilization: 0.95
+  max_model_len: 16384
+  parallel_episodes: 32
+  quantization: "fp8"
+  max_num_seqs: 256
+
+training:
+  save_data: true
+  formats: ["sft", "dpo"]
+
+api_models:
+  gpt:
+    provider: "openai"
+    model_name: ""  # set to your hosted model; empty means no hosted model is configured
+    max_concurrent: 16
+  gpt4o_mini:
+    provider: "openai"
+    model_name: ""  # set to your hosted model; empty means no hosted model is configured
+    max_concurrent: 16
+
+# API keys — leave null so we always use sbatch-exported env vars.
+api_keys:
+  serpapi_key: null
+  openai_key: null
+  anthropic_key: null

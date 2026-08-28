@@ -1,0 +1,38 @@
+# HASP
+#   pip install -r requirements.txt
+#
+# Install vLLM first and let it resolve torch. Pinning torch separately against
+# a different CUDA build is the usual way to end up with a vLLM that imports but
+# cannot see a GPU. `flash-attn` is deliberately absent: it compiles against
+# your exact torch/CUDA pair and fails the whole install when it does not match.
+
+# ── runtime ──
+vllm==0.15.1
+transformers==5.5.3
+accelerate>=1.12
+numpy>=2.2
+pandas>=2.2
+pyarrow>=16
+datasets>=3.2
+sympy>=1.13                  # the deterministic checkers in anchor/pf_checkers.py
+PyYAML>=6.0
+
+# ── training (SFT / rejection sampling / GRPO / distillation) ──
+trl>=0.27
+peft>=0.18
+deepspeed>=0.15              # ZeRO-3
+wandb>=0.16                  # run logging; optional at runtime
+
+# ── hosted models and live web search ──
+# Only the helper-backed skills and the web domain reach for these; everything
+# measured on math and code runs entirely on local vLLM.
+openai>=1.99                 # OPENAI_API_KEY
+anthropic>=0.66              # ANTHROPIC_API_KEY
+google-genai>=1.6            # GOOGLE_API_KEY
+google-search-results>=2.4   # SERPAPI_API_KEY — provides `from serpapi import GoogleSearch`.
+                             # `pip install serpapi` is a DIFFERENT package.
+requests>=2.32
+beautifulsoup4>=4.12
+
+# ── tests ──
+pytest>=8.0

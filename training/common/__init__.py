@@ -1,0 +1,1 @@
+"""Shared training-side utilities."""

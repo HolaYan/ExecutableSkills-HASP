@@ -1,0 +1,148 @@
+# Self-Improving Skills Agent Configuration
+# Usage: python self_improving/run_self_improving.py --config self_improving/configs/self_improving.yaml
+
+experiment:
+  name: "self_improving_v1"
+  output_dir: "./outputs/self_improving/"
+  num_epochs: 5
+
+# Base model for ReAct execution
+models:
+  base:
+    path: "Qwen/Qwen3-30B-A3B-Thinking-2507-FP8"
+    backend: null  # null = local/vLLM
+
+# Role assignments
+roles:
+  student: "Qwen/Qwen3-30B-A3B-Thinking-2507-FP8"     # Student: executes ReAct + proposes skills
+  teacher: "gpt"     # Auxiliary model: PF selection + candidate review
+
+# Validation set configuration
+# Seed and validation come from the SAME datasets as the test set,
+# but use only the TAIL portion (samples after the test set boundary).
+# Test boundaries are auto-detected from inference_results_dir; per-dataset
+# overrides (test_samples_overrides) take precedence to shrink a boundary
+# so more samples become available for seed/validation.
+#
+# TEST-MODE scope: limited to HotpotQA + 2Wiki + Bamboogle for fast
+# iteration. BrowseComp / DeepResearcher / GAIA / frames are commented
+# out. Bamboogle's test boundary is shrunk to 60 (freeing 65 samples
+# for seed/val); full-scale runs should restore both.
+validation:
+  source_dir: "${HASP_WEB_SOURCE}"
+  inference_results_dir: "outputs/skill_eval_adaptive_qwem3_30b/skill_eval_best/three_forced_skills"
+  default_test_samples: 200
+  test_samples_overrides: {}      # Bamboogle dropped — no overrides needed
+  datasets:
+    - "2WikiMultihopQA_rand1000"  # total=1000, test=200, avail=800
+    - "HotpotQA_rand1000"         # total=1000, test=200, avail=800
+    - "Musique_rand1000"          # total=1000, test=200, avail=800   (replaces Bamboogle)
+    # - "BrowseComp"                 # disabled for test-mode; total=295, test=200
+    # - "DeepResearcher_rand1000"    # disabled for test-mode; total=1000, test=200
+    # - "GAIA"                       # disabled for test-mode; total=103, test=103 (auto-skipped)
+    # - "frames"                     # disabled for test-mode; total=824, test=200
+  seed_samples_per_dataset: 50    # per-dataset seed cap
+  val_samples_per_dataset: 50     # per-dataset val cap (3 eligible × ~50 ≈ 150)
+
+# Skill library — stored under self_improving/skills/
+# seed: initial skills (copied from configs/skills/)
+# generated: new skills produced during self-improving epochs
+# snapshots: per-epoch full library snapshots
+skills:
+  seed_skill_dir: "self_improving/skills/seed/"
+  generated_skill_dir: "self_improving/skills/generated/"
+  skill_snapshots_dir: "self_improving/skills/snapshots/"
+  pf_selection:
+    enabled: true
+    model: "gpt"
+    top_k: 10
+  difficulty_gating:
+    enabled: true
+    threshold: 3
+
+# Skill proposal (student generates candidates)
+proposal:
+  max_candidates_per_epoch: 5
+  min_cluster_size: 3
+  student_model: "gpt"
+  temperature: 0.7
+  # Failure-analysis strategy: "heuristic" | "llm" | "both"
+  # "both" runs the regex detectors, then also asks the PF helper to
+  # abstract each failed trajectory into a reusable failure category.
+  # This is the main lever the E4-E6 closed-loop runs use to generate
+  # skills that actually target the residual failures on training data.
+  analyzer_mode: "both"
+  llm_analyzer_concurrency: 8
+  llm_dedup_threshold: 0.5
+
+# Skill review (the PF helper evaluates candidates)
+review:
+  teacher_model: "gpt"
+  acceptance_threshold: 0.6
+  weight_concept: 0.25
+  weight_trigger: 0.20
+  weight_intervene: 0.20
+  weight_exec: 0.20
+  weight_validation: 0.15
+  temperature: 0.3
+
+# Library management
+library:
+  max_library_size: 50
+  new_group_threshold: 0.75
+  same_group_threshold: 0.60
+  allow_new_categories: true
+
+# Pseudo-gradient weights
+pseudo_gradient:
+  alpha_local: 0.4
+  beta_downstream: 0.4
+  gamma_cost: 0.1
+  delta_side_effect: 0.1
+  lambda_validation_gain: 0.5
+
+# Budget constraints
+budget:
+  max_steps: 25
+  max_search_calls: 15
+  max_read_calls: 15
+  timeout_seconds: 600
+
+# vLLM settings (used for student model when roles.student is a model path)
+vllm:
+  enabled: true
+  gpu_memory_utilization: 0.95
+  max_model_len: 32768
+  parallel_episodes: 16
+  quantization: "fp8"
+  max_num_seqs: 512
+
+# Training data output
+training:
+  save_data: true
+  formats: ["sft", "dpo"]
+
+# API models
+api_models:
+  gpt:
+    provider: "openai"
+    model_name: ""  # set to your hosted model; empty means no hosted model is configured
+    max_concurrent: 16
+  gpt4o_mini:
+    provider: "openai"
+    model_name: ""  # set to your hosted model; empty means no hosted model is configured
+    max_concurrent: 16
+  claude:
+    provider: "anthropic"
+    model_name: "claude-sonnet-4-20250514"
+    max_concurrent: 16
+
+# API keys — leave null so we always use the sbatch-exported env vars
+# (OPENAI_API_KEY, SERPAPI_API_KEY, ANTHROPIC_API_KEY). Hardcoding here
+# overrides the env var; the previous run silently kept using a dead key
+# even after sbatch exported a fresh one. See _resolve_api_key in
+# self_improving/pipeline.py — yaml takes precedence when non-empty.
+api_keys:
+  serpapi_key: null
+  openai_key: null
+  anthropic_key: null

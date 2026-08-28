@@ -1,0 +1,66 @@
+# E2 (code) — Rejection sampling / iterative SFT (Objective A).
+# Rollout-time pass@1 is wired via `eval_test_code` (HumanEval+/MBPP+/BCB):
+# `_scan_gold_table` reads it from `data/code/<bench>.jsonl`,
+# `load_training_samples` attaches it to each prompt, and
+# `flatten_to_per_step` runs CodeAnswerEvaluator with the script-runner path.
+# Hence `require_exact_match=true` is meaningful — only sandbox-passing
+# trajectories survive RS.
+
+experiment:
+  id: "H2_code_rs_evidence_pfs"
+  output_dir: "./training/outputs/"
+  seed: 42
+
+method: "rs"
+objective: "A"
+domain: "code"
+n_iterations: 2
+
+model:
+  path: "Qwen/Qwen2.5-7B-Instruct"
+
+data:
+  prompts_path: "./training/outputs/_shared_data_code/objA_prompts.jsonl"
+
+rollout:
+  group_size: 4
+  temperature: 0.9
+  top_p: 0.95
+  max_new_tokens: 2048             # code can be long
+  max_model_len: 8192
+  tensor_parallel_size: 2
+  mode: "action"
+  max_steps: 2
+  max_search_calls: 0
+  max_read_calls: 0
+  parallel_episodes: 64
+  max_num_seqs: 256
+  gpu_memory_utilization: 0.90
+  raw_data_dir: "data/code"
+  skill_library_dir: "./skills/code"   # resolved to skills/{textual,executable}/code (see skills_layout.py)
+
+filter:
+  top_k: 2
+  require_exact_match: true        # sandbox pass@1 is now reliable; gate on it
+  min_score: 0.05
+  # HASP: additionally re-run the spec's own >>> / assert examples on each kept
+  # episode's answer and drop the ones that fail (SpecExampleVerifier — the
+  # training-time form of code3, 73.1 -> 76.4 with 0 broke at inference).
+  # Defaults to true for domain=code; set false to disable.
+  spec_example_gate: true
+
+trainer:
+  num_train_epochs: 8.0
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  learning_rate: 5.0e-6
+  warmup_ratio: 0.03
+  max_seq_length: 4096
+  bf16: true
+  gradient_checkpointing: true
+  save_every_n_epochs: 2
+  save_total_limit: 5
+  use_lora: true
+  lora_r: 16
+  lora_alpha: 32
+  report_to: "wandb"

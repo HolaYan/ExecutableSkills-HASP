@@ -1,0 +1,138 @@
+# HASP evaluation protocol.
+#
+# Every value here is the one the reported results were produced with. They used
+# to be argparse defaults and literals spread across the harnesses; collecting
+# them means a reviewer can read the exact protocol in one place, and a sweep
+# can change it without editing source.
+#
+# Precedence:  CLI flag  >  this file  >  the dataclass default in hasp_config.py
+#
+# Point somewhere else with HASP_PROTOCOL=/path/to/other.yaml. Changing a value
+# here changes what the numbers mean — copy the file for a variant rather than
+# editing this one in place.
+
+# ── models ──────────────────────────────────────────────────────────────────
+models:
+  policy_math: "Qwen/Qwen3-4B-Instruct-2507"   # the policy under evaluation
+  policy_code: "Qwen/Qwen2.5-7B-Instruct"      # code + web regeneration policy
+  judge: "Qwen/Qwen3-8B"                       # step locator / evidence judge
+  arbiter: "openai/gpt-oss-20b"                # cross-model arbiter (deliberately
+                                               # a different family: same-model
+                                               # arbiters share the misreading)
+
+# ── serving ─────────────────────────────────────────────────────────────────
+serving:
+  tensor_parallel: 1
+  gpu_memory_utilization: 0.88
+
+# ── the accuracy protocol (pf_select/eval_models.py) ────────────────────────
+# Reported numbers are pass@1 under exactly this. pf_select reuses the
+# skills_off Turn-1 rollouts, so the two arms are paired per rollout.
+accuracy:
+  n: 64
+  temperature: 0.7          # collapses to 0.0 when n == 1
+  max_tokens: 8192
+  max_model_len: 16384
+  max_samples: 100          # questions per dataset
+  datasets: "aime24,amc23,olympiadbench"
+  thinking: false           # Turn 1 and Turn 2; the selection turn is always off
+
+# ── offline harnesses (anchor/eval_*.py) ────────────────────────────────────
+harness:
+  math:                     # eval_polished_pfs.py
+    max_model_len: 20480
+    max_tokens: 6144
+    n: 2                    # regeneration samples; 2 agreeing is the gate
+    temperature: 0.7
+  code:                     # eval_code_polished.py / eval_code_iter2.py
+    max_model_len: 12288
+    max_tokens: 2048
+    n: 2
+    n_best_of: 4            # eval_code_iter2: the accepted best-of-n
+    temperature: 0.7
+    per_arm_cap: 400
+  web:                      # eval_web_polished.py
+    max_model_len: 20480
+    n: 2
+    cap_per_file: 120
+    locate_max_tokens: 2048
+    locate_temperature: 0.0
+    answer_max_tokens: 64
+    temperature: 0.7
+
+# ── the LLM locator chain (anchor/llm_locate.py) ────────────────────────────
+locator:
+  max_model_len: 20480
+  max_tokens: 6144
+  votes: 1                  # >1 samples the locate step; correlated within a model
+  locate_temperature: 0.0
+  vote_temperature: 0.6
+  arbiter_temperature: 0.0
+  regen_temperature: 0.0
+  locate_max_tokens: 4096
+  arbiter_max_tokens: 3072
+  control_per_ds: 60        # committed-correct controls per dataset
+  wrong_per_ds: -1          # -1 = all
+
+# ── step-level dual consent (anchor/step_gate.py) ───────────────────────────
+step_gate:
+  max_model_len: 20480
+  max_tokens: 6144
+  max_hits: 12              # anchored steps considered per rollout
+  max_audits: 3             # helper audits per rollout
+  n_samples: 2
+  consent_max_tokens: 128
+  consent_temperature: 0.0
+  evidence_max_tokens: 2048
+  evidence_temperature: 0.0
+  regen_temperature: 0.7
+
+# ── the PF helper model (anchor/pf_helper.py) ───────────────────────────────
+# The optional model a PF consults. Greedy on purpose: its job is to locate and
+# state, not to be creative.
+helper:
+  temperature: 0.0
+  max_tokens: 4096
+  max_model_len: 20480
+  thinking: true
+
+# ── step segmentation (anchor/anchor.py, skills/*/evidence_pfs.py) ──────────
+# The granularity every step-level checker is calibrated against. Production
+# takes the union of ReAct markers and paragraph boundaries, then merges to
+# `production_min_len`; that yields a median of 13 steps, p90 43.
+segmentation:
+  base_min_len: 40          # segment_steps default
+  base_max_steps: 200
+  union_min_len: 60         # paragraph pass inside the union
+  production_min_len: 350   # merge target for _steps()
+
+# ── deterministic checkers (anchor/pf_checkers.py) ──────────────────────────
+# NOTE: SKILL.md frontmatter also declares `action_params.tolerance_rel`. That
+# field is documentation only and is NOT read at runtime; this value is the one
+# that fires.
+checkers:
+  compute_tolerance_rel: 0.01
+  compute_tolerance_abs: 1.0e-6
+
+# ── forge screening gate (skills_construct/forge/screen.py) ────────────────────────────
+# Read off the boundary between what worked and what was falsified, not chosen
+# by taste. See docs/research_notes.md.
+screen:
+  min_fire_wrong: 0.03      # below this the family has no population
+  max_fire_correct: 0.06    # compute_observation_verify sat at 4.9% and held
+  min_lift: 2.0             # the survived/falsified boundary
+  max_error_rate: 0.02      # a checker that crashes on real inputs is not done
+
+# ── the admitted library (skills_construct/forge/measure.py, anchor/eval_polished_pfs.py) ──
+# The baseline a new candidate is measured against. Add an id here after it is
+# admitted, so the next round is measured against the improved baseline.
+library:
+  base_pfs:
+    - arithmetic_slip
+    - algebraic_sign_error
+    - boundary_violation
+    - case_incompleteness
+    - verification_missing
+    - unsupported_final_answer
+    - interval_sign_check
+    - unsupported_known_result

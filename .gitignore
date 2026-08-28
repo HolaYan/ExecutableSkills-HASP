@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Caches written by torch / vLLM / triton (HASP_CACHE_ROOT defaults here)
+.cache/
+
+# Job output
+logs/
+slurm-*.out
+*.log
+
+# Corpora, baselines and run outputs. None of it ships: point HASP_DATA at your
+# own copies, and generate the parity baseline on your own machine, since it
+# records how the library behaves there.
+data/
+training/outputs/
+*/outputs/
+
+# Generated reports and scores. A quality score committed next to the thing it
+# scores reads as a claim about it; regenerate rather than ship.
+quality_report.json
+*_report.json
+*_summary.json
+
+# Model weights and checkpoints
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+
+# Local site configuration (paths, accounts) — never committed
+.hasp_site
+.env
